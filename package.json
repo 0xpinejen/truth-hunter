@@ -1,0 +1,10 @@
+{
+  "name": "truthhunter",
+  "version": "0.3.0",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix apps/web run build:cloud && python3 scripts/prepare-edgeone.py",
+    "test": "sh scripts/test.sh"
+  },
+  "type": "module"
+}

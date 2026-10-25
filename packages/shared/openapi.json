@@ -21,6 +21,42 @@
         }
       }
     },
+    "/extract-image": {
+      "post": {
+        "summary": "Extract Image",
+        "operationId": "extract_image_extract_image_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/investigations": {
       "get": {
         "summary": "Listing",
@@ -86,6 +122,99 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/investigations/{id}/snapshots/{snapshot_id}": {
+      "get": {
+        "summary": "Snapshot Text",
+        "operationId": "snapshot_text_investigations__id__snapshots__snapshot_id__get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "snapshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Snapshot Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/investigations/{id}/review": {
+      "post": {
+        "summary": "Review",
+        "operationId": "review_investigations__id__review_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewSubmission"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -278,6 +407,43 @@
   },
   "components": {
     "schemas": {
+      "ClaimReview": {
+        "properties": {
+          "claim_id": {
+            "type": "string",
+            "title": "Claim Id"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "independent_sources",
+              "primary_document",
+              "insufficient"
+            ],
+            "title": "Method"
+          },
+          "documentary_scope": {
+            "type": "string",
+            "maxLength": 2000,
+            "title": "Documentary Scope",
+            "default": ""
+          },
+          "rationale": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 20,
+            "title": "Rationale"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "claim_id",
+          "method",
+          "rationale"
+        ],
+        "title": "ClaimReview"
+      },
       "CreateInvestigation": {
         "properties": {
           "message": {
@@ -303,6 +469,15 @@
             ],
             "title": "Data Mode",
             "default": "live"
+          },
+          "workflow": {
+            "type": "string",
+            "enum": [
+              "investigation",
+              "search"
+            ],
+            "title": "Workflow",
+            "default": "investigation"
           }
         },
         "additionalProperties": false,
@@ -311,6 +486,47 @@
           "message"
         ],
         "title": "CreateInvestigation"
+      },
+      "EvidenceReview": {
+        "properties": {
+          "evidence_id": {
+            "type": "string",
+            "title": "Evidence Id"
+          },
+          "stance": {
+            "type": "string",
+            "enum": [
+              "supports",
+              "refutes",
+              "context"
+            ],
+            "title": "Stance"
+          },
+          "relevant": {
+            "type": "boolean",
+            "title": "Relevant"
+          },
+          "time_matches": {
+            "type": "boolean",
+            "title": "Time Matches"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 10,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "evidence_id",
+          "stance",
+          "relevant",
+          "time_matches",
+          "reason"
+        ],
+        "title": "EvidenceReview"
       },
       "HTTPValidationError": {
         "properties": {
@@ -324,6 +540,133 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "ImageInput": {
+        "properties": {
+          "data_url": {
+            "type": "string",
+            "maxLength": 7000000,
+            "title": "Data Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "data_url"
+        ],
+        "title": "ImageInput"
+      },
+      "ReviewSubmission": {
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "title": "Report Id"
+          },
+          "reviewer": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 2,
+            "title": "Reviewer"
+          },
+          "review_type": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "assistant"
+            ],
+            "title": "Review Type"
+          },
+          "acknowledged": {
+            "type": "boolean",
+            "title": "Acknowledged"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceReview"
+            },
+            "type": "array",
+            "maxItems": 6,
+            "title": "Sources"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceReview"
+            },
+            "type": "array",
+            "maxItems": 48,
+            "title": "Evidence"
+          },
+          "claims": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimReview"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Claims"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "report_id",
+          "reviewer",
+          "review_type",
+          "acknowledged",
+          "claims"
+        ],
+        "title": "ReviewSubmission"
+      },
+      "SourceReview": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "origin_group": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 1,
+            "title": "Origin Group"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "original_reporting",
+              "attributed",
+              "unknown"
+            ],
+            "title": "Role"
+          },
+          "independence_confirmed": {
+            "type": "boolean",
+            "title": "Independence Confirmed",
+            "default": false
+          },
+          "basis_quote": {
+            "type": "string",
+            "maxLength": 1500,
+            "minLength": 10,
+            "title": "Basis Quote"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 20,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_id",
+          "origin_group",
+          "role",
+          "basis_quote",
+          "reason"
+        ],
+        "title": "SourceReview"
       },
       "ValidationError": {
         "properties": {

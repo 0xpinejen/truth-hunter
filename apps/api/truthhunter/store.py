@@ -46,7 +46,7 @@ class Store:
 
     def list(self):
         with self.session() as s:
-            return [dict(json.loads(x.payload), id=x.id, status=x.status) for x in s.scalars(select(Investigation)).all()][::-1]
+            return sorted([dict(json.loads(x.payload), id=x.id, status=x.status) for x in s.scalars(select(Investigation)).all()],key=lambda x:(x.get('created_at',''),x['id']),reverse=True)
 
     def emit(self, id, status, message, **details):
         from .contracts import TERMINAL
@@ -70,3 +70,16 @@ class Store:
     def events(self, id, after=0):
         with self.session() as s:
             return [dict(json.loads(x.payload), id=x.id) for x in s.scalars(select(Event).where(Event.investigation_id==id, Event.id>after).order_by(Event.id)).all()]
+
+    def complete_review(self,id,base_report_id,review_id,review,report_id,report):
+        from .providers import ProviderError
+        with self.session.begin() as s:
+            row=s.get(Investigation,id)
+            reports=s.scalars(select(Record).where(Record.investigation_id==id,Record.kind=='report')).all()
+            latest=max(reports,key=lambda r:json.loads(r.payload).get('revision',1)) if reports else None
+            if row.status not in {'PARTIAL','COMPLETED'} or not latest or latest.id!=base_report_id:
+                raise ProviderError('REVIEW_STALE_OR_NOT_READY')
+            s.add(Record(id=review_id,investigation_id=id,kind='review',payload=json.dumps(review,ensure_ascii=False)))
+            s.add(Record(id=report_id,investigation_id=id,kind='report',payload=json.dumps(report,ensure_ascii=False)))
+            row.status='COMPLETED'
+            s.add(Event(investigation_id=id,payload=json.dumps({'status':'COMPLETED','message':'显式复核完成，裁决及范围已留档；不保证所有声明都有定论。','created_at':now(),'review_id':review_id,'report_id':report_id},ensure_ascii=False)))

@@ -19,7 +19,7 @@ def store(tmp_path):
     return s
 
 def create(s,id='case',data_mode='live'):
-    s.create(id,{'message':'待核查的具体消息','mode':'quick','data_mode':data_mode,'created_at':'2026-10-23T00:00:00+00:00'})
+    s.create(id,{'message':'演示服务是否永久无限免费？' if data_mode=='fixture' else '待核查的具体消息','mode':'quick','data_mode':data_mode,'created_at':'2026-10-23T00:00:00+00:00'})
 
 @pytest.mark.asyncio
 async def test_yuanbao_contract():
@@ -183,7 +183,8 @@ def test_restart_marks_interrupted_work_partial(tmp_path):
         assert app.state.store.events('case')[-1]['message']=='PROCESS_RESTARTED'
 
 @pytest.mark.asyncio
-async def test_controlled_full_live_path_preserves_quotes_and_duplicate_relationship(store,tmp_path):
+@pytest.mark.parametrize("adversarial_failure",[False,True])
+async def test_controlled_full_live_path_preserves_quotes_and_duplicate_relationship(store,tmp_path,adversarial_failure):
     from truthhunter.contracts import Quotes, Quote, Assessments
     from hashlib import sha256
     body='这是本地契约测试正文，只有有限试用额度，不能据此判断现实产品的情况。'
@@ -195,6 +196,7 @@ async def test_controlled_full_live_path_preserves_quotes_and_duplicate_relation
             raise AssertionError('Unexpected call')
     class ControlledSearch:
         async def search(self,query):
+            if adversarial_failure and '反驳' in query:raise ProviderError('WSA_TIMEOUT')
             return {'request_id':'test-only-not-real','data_mode':'test-controlled','raw':{},'pages':[{'url':'https://test-a.invalid/page','title':'test a'},{'url':'https://test-b.invalid/page','title':'test b'}]}
     class ControlledBrowser:
         async def capture(self,url,source_id):
@@ -204,6 +206,7 @@ async def test_controlled_full_live_path_preserves_quotes_and_duplicate_relation
     assert store.get('case')['status']=='PARTIAL'
     searches=store.records('case','search_run')
     assert len(searches)==2 and searches[1]['intent']=='adversarial'
+    assert searches[1]['status']==('failed' if adversarial_failure else 'succeeded')
     assert len(store.records('case','source'))==2
     assert len(store.records('case','evidence'))==2
     relations=store.records('case','source_relationship')
@@ -214,3 +217,78 @@ async def test_controlled_full_live_path_preserves_quotes_and_duplicate_relation
     assert report['assessments'][0]['verdict']=='INSUFFICIENT'
     assert report['assessments'][0]['proposed_verdict']=='REFUTED'
     assert report['assessments'][0]['evidence_ids'][0] in {e['id'] for e in report['evidence']}
+
+@pytest.mark.asyncio
+async def test_search_only_never_calls_llm_or_browser_and_keeps_audit(store,tmp_path):
+    class Forbidden:
+        async def json(self,*a,**kw):raise AssertionError('Search must not call the LLM')
+        async def capture(self,*a,**kw):raise AssertionError('Search must not capture pages')
+    class Search:
+        async def search(self,query):
+            return {'provider':'tencent_yuanbao','request_id':'controlled-not-a-real-request','pages':[{'url':'https://example.com','title':'契约测试线索','passage':'不属于原文证据'}],'raw':{'test_only':True},'data_mode':'live'}
+    store.create('search',{'message':'测试搜索词','mode':'quick','data_mode':'live','workflow':'search','created_at':'test'})
+    await Engine(store,tmp_path,search=Search(),llm=Forbidden(),browser=Forbidden()).run('search')
+    assert store.get('search')['status']=='PARTIAL'
+    report=store.records('search','report')[0]
+    assert report['workflow']=='search'
+    assert report['assessments']==[] and report['evidence']==[] and report['sources']==[]
+    assert len(report['searches'])==1 and report['searches'][0]['raw']=={'test_only':True}
+    assert report['searches'][0]['started_at']<=report['searches'][0]['finished_at']
+
+@pytest.mark.asyncio
+async def test_search_timeout_keeps_interrupted_audit(store,tmp_path):
+    class SlowSearch:
+        async def search(self,*_):await asyncio.sleep(2)
+    store.create('search',{'message':'超时测试','mode':'quick','data_mode':'live','workflow':'search','created_at':'test'})
+    await Engine(store,tmp_path,search=SlowSearch(),timeout=.02).run('search')
+    assert store.get('search')['status']=='PARTIAL'
+    run=store.records('search','search_run')[0]
+    assert run['status']=='interrupted' and run['error']=='SEARCH_INTERRUPTED'
+    assert store.records('search','report')[0]['searches'][0]['id']==run['id']
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('error,code',[(httpx.ConnectError('secret must not leak'),'WSA_NETWORK_ERROR'),(httpx.ReadTimeout('secret must not leak'),'WSA_TIMEOUT')])
+async def test_search_transport_errors_are_safe(error,code):
+    def fail(_):raise error
+    with pytest.raises(ProviderError,match=code):
+        await TencentYuanbaoSearchProvider('test',httpx.MockTransport(fail)).search('query')
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('pages,request_id',[
+    ([],True),([],' '),([json.dumps({'url':'https://example.com','title':None})],'test')])
+async def test_search_rejects_malformed_result_fields(pages,request_id):
+    response=httpx.Response(200,json={'Response':{'Pages':pages,'RequestId':request_id}})
+    with pytest.raises(ProviderError):
+        await TencentYuanbaoSearchProvider('test',httpx.MockTransport(lambda _:response)).search('query')
+
+def test_search_api_export_health_and_fixture_separation(tmp_path):
+    app=create_app('sqlite:///'+str(tmp_path/'search-api.db'),tmp_path)
+    Base.metadata.create_all(app.state.store.engine)
+    class Search:
+        key='test-only'
+        async def search(self,query):return {'provider':'tencent_yuanbao','request_id':'test-contract-id','pages':[],'raw':{'test':True},'data_mode':'live'}
+    app.state.engine.search=Search()
+    with TestClient(app) as client:
+        assert client.post('/investigations',json={'message':'演示服务是否永久无限免费？','data_mode':'fixture','workflow':'search'}).status_code==422
+        id=client.post('/investigations',json={'message':'契约测试搜索','workflow':'search'}).json()['id']
+        for _ in range(100):
+            detail=client.get('/investigations/'+id).json()
+            if detail['status'] in {'PARTIAL','FAILED'}:break
+            time.sleep(.01)
+        assert detail['status']=='PARTIAL'
+        exported=client.get('/investigations/'+id+'/report.md').text
+        assert 'test-contract-id' in exported and '仅搜索线索' in exported and '摘要不是证据' in exported
+        assert client.get('/health').json()['search_history']['succeeded']==1
+        assert client.post('/extract-image',json={'data_url':'data:image/png;base64,aGVsbG8='}).status_code==422
+        assert client.post('/extract-image',json={'data_url':'invalid'}).status_code==422
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('message',list(__import__('truthhunter.demo_cases',fromlist=['CASES']).CASES))
+async def test_all_demo_cases_stay_fictional(store,tmp_path,message):
+    store.create('demo',{'message':message,'mode':'quick','data_mode':'fixture','created_at':'test'})
+    await Engine(store,tmp_path).run('demo')
+    report=store.records('demo','report')[0]
+    assert store.get('demo')['status']=='COMPLETED'
+    assert report['data_mode']=='fixture' and report['assessments'][0]['verdict']=='INSUFFICIENT'
+    assert not store.records('demo','snapshot')
+    assert all(r.get('request_id') is None for r in report['searches'])

@@ -11,3 +11,15 @@ __pycache__/
 data/
 artifacts/
 .DS_Store
+
+# Tencent Cloud EdgeOne
+.env
+.edgeone/*
+.tef_dist/*
+
+# Static build output
+apps/web/out/
+
+# Generated cloud backend bundle (built from apps/api)
+/agents/_truthhunter/
+/agents/_browser_source.txt

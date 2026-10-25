@@ -1,0 +1,17 @@
+{
+  "buildCommand": "npm --prefix apps/web ci && npm --prefix apps/web run build:cloud && python3 scripts/prepare-edgeone.py",
+  "outputDirectory": "apps/web/out",
+  "agents": {
+    "framework": "openai-agents-sdk",
+    "dir": "agents",
+    "timeout": 300,
+    "sandbox": {
+      "timeout": 600
+    }
+  },
+  "cloudFunctions": {
+    "nodejs": {
+      "maxDuration": 120
+    }
+  }
+}
