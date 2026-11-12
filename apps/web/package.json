@@ -8,7 +8,7 @@
     "start": "next start --hostname 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "build:showcase": "NEXT_PUBLIC_SHOWCASE=true next build",
-    "test:showcase": "node --experimental-strip-types --test tests/showcase.test.mjs",
+    "test:showcase": "node --experimental-strip-types --test tests/*.test.mjs",
     "build:cloud": "NEXT_PUBLIC_CLOUD=true NEXT_PUBLIC_API_BASE=/api next build"
   },
   "dependencies": {
